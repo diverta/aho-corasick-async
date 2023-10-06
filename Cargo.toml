@@ -1,0 +1,9 @@
+[package]
+name = "aho-corasick-async"
+version = "0.1.0"
+edition = "2021"
+authors = ["Artem <artem@diverta.co.jp>"]
+
+[dependencies]
+futures = "0.3.28"
+pin-project-lite = "0.2"
