@@ -58,6 +58,17 @@ where
             Poll::Ready(result) => {
                 match result {
                     Ok(size) => {
+                        if size == 0 {
+                            // End reached - discard potential buffer
+                            while this.potential_buffer.len() > 0 {
+                                if write_idx < buf.len() {
+                                    buf[write_idx] = this.potential_buffer.pop_front().unwrap();
+                                    write_idx += 1;
+                                } else {
+                                    this.pending_write_buffer.push_back(this.potential_buffer.pop_front().unwrap());
+                                }
+                            }
+                        }
                         for byte in &this.buffer[..size] {
                             this.ac.automaton.next_state(byte);
                             let current_state_depth = this.ac.automaton.state_depth();
@@ -116,6 +127,8 @@ where
                             Poll::Ready(Ok(write_idx))
                         } else if this.potential_buffer.len() > 0 {
                             // Nothing written, but potential buffer is not empty - request immediate poll again with new buffer
+                            // This case happens when the potential buffer (replacement word length) exceeds the current chunk size while matching the entire chunk :
+                            // nothing can be written yet, but next chunk(s) are needed to determine the outcome (discard as-is, or replace)
                             cx.waker().clone().wake();
                             Poll::Pending
                         } else {

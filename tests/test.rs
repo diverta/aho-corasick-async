@@ -48,10 +48,19 @@ fn test_reader() {
                 Vec::from(
                     [
                         ("ab".as_bytes().to_vec(), "ABAB".as_bytes().to_vec()),
-                        ("e".as_bytes().to_vec(), "EE".as_bytes().to_vec()),
+                        ("efg".as_bytes().to_vec(), "EFG".as_bytes().to_vec()),
                     ]
                 ),
-                "ABABcdEEf".repeat(100),
+                "ABABcdef".repeat(100),
+            ),
+            (
+                "a".repeat(10),
+                Vec::from(
+                    [
+                        ("aaaa".as_bytes().to_vec(), "AAAA".as_bytes().to_vec()),
+                    ]
+                ),
+                "AAAAAAAAaa".to_owned(),
             ),
             (
                 "Now he is here, so is she. his hair is blond, her bag is big".to_owned(),
