@@ -1,5 +1,11 @@
 Simple and safe implementation of AhoCorasick automaton in Async context
 
+## Motivation
+
+In non async context, look no further than the popular [aho-corasick](https://github.com/BurntSushi/aho-corasick) crate.
+
+However, due to the (current) [decision to not support async](https://github.com/BurntSushi/aho-corasick/issues/95) in that crate, at the time of writing there seems to be no alternative when wanting to perform efficient replacement in the async context. Hence writing a simple library for that purpose only. Which is why here we keep the features/interfaces to the minimal necessary, but open to improvements and PRs.
+
 ## Instantiating the AhoCorasick automaton
 
 To instantiate an AhoCorasick struct, you need a Vec of tuples having the word as Vec<u8> and its replacement as Option<Vec<u8>> :
@@ -86,7 +92,7 @@ By its nature, Aho-Corasick algorithm outperforms any manual scans/replacements,
 
 That being said, let's get a rough idea of how aho-corasick-async performs in a CPU-bound process.
 
-From very simple benchmarks comparatively with the popular [aho-corasick crate](https://github.com/BurntSushi/aho-corasick) and the basic manual comparison code along the lines of :
+From very simple benchmarks comparatively with the [aho-corasick](https://github.com/BurntSushi/aho-corasick) crate and the basic manual comparison code along the lines of :
 ```rust
     let input = ... // Some very large String loaded from a file
     let words: Vec<(&str, &str)> = Vec::from([
@@ -122,4 +128,4 @@ From very simple benchmarks comparatively with the popular [aho-corasick crate](
 
 Comparing the times, currently standard non-async aho-corasick performs anywhere between 2 to 10 times faster, depending on the number of replacements, matching patterns, etc. Good news is, the ratio of both performances does not change with input size, and is constant.
 
-Aside from futures overhead, the code may surely be optimized to perform better - if you have ideas, please open an issue or even a PR to discuss them. As of now, the features are equally minimal and will be added when/if need arises.
+Aside from futures overhead, the slowness is due to the automaton navigation code which is all but optimal, due to the usage of RefCells and no implementation of advanced techniques such as memory efficient layouts ensuring fast node traversal (yet). As of the 0.1.0, the features are equally minimal and will be added when/if need arises.
