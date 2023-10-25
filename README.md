@@ -25,7 +25,7 @@ AhoCorasick struct does implement cheap-ish Clone, as only pointers to the nodes
 
 ## Usage
 
-Now, onto the usage. The interface consists of implementing AsyncRead and AsyncWrite traits of `futures` crate :
+Now, on to the usage. The interface consists of implementing AsyncRead and AsyncWrite traits of `futures` crate :
 
 ### Usage 1. Using AhoCorasickAsyncReader, which wraps around your own AsyncRead, and replacements are performed when polling from it.
 
@@ -78,12 +78,11 @@ let buffer_size = 8096; // Pick a buffer size that fits your case the best
 let result: Result<(), std::io::Error> = ac.try_stream_replace_all(&mut reader, &mut writer, test_buffer_size).await;
 ```
 
-It only requires you to specify the desired buffer size for the reading, to avoid making any assumptions. This helper method body is pretty straightforward, and you can use it yourself
-
+It only requires you to specify the desired buffer size for the reading, to avoid making any assumptions. This helper method body is pretty straightforward and could be easily implemented manually.
 
 ## Performance
 
-By its nature, Aho-Corasick algorithm outperforms any manual scans/replacements, and the number of replacements have little to no impact on the performance. However, the main focus of this crate is a working and safe implementation in the async context, where the performance bottleneck is often times not CPU-bound processing, but rather waiting to to receive or send the bytes in an async environment.
+By its nature, Aho-Corasick algorithm outperforms any manual scans/replacements, and the number of replacements have little to no impact on the performance which is always in linear time with the input size. However, the main focus of this crate is a working and safe implementation in the async context, where the performance bottleneck is often times not CPU-bound processing, but rather waiting to to receive or send the bytes in an async environment.
 
 That being said, let's get a rough idea of how aho-corasick-async performs in a CPU-bound process.
 
