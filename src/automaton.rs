@@ -14,6 +14,19 @@ impl Display for AcAutomaton {
     }
 }
 
+impl Clone for AcAutomaton {
+    // Cloning the Automaton only clones the pointers to the nodes, meaning that modifying the contents node will affect all the clones of this AC
+    // This however is not only unnecessary, but is also impossible due to the purposeful lack of public methods to mutably access the nodes from the outside (except for state changes)
+    // The future changes in the design must try to keep this in mind
+    // The state, however, is reset to point at root for the cloned version
+    fn clone(&self) -> Self {
+        Self {
+            root: Rc::clone(&self.root),
+            state: Rc::clone(&self.root)
+        }
+    }
+}
+
 /// A simple trie implementation with minimal features
 #[derive(Debug)]
 struct AcAutomatonNode {
@@ -22,6 +35,7 @@ struct AcAutomatonNode {
     suffix_link: Weak<RefCell<AcAutomatonNode>>,
     output_link: Weak<RefCell<AcAutomatonNode>>,
     is_word: bool, // If true, the word ending here belongs to the dictionnary
+    replacement: Option<Rc<Vec<u8>>> // Keeping here the target replacement for easy access
 }
 
 impl Display for AcAutomatonNode {
@@ -43,13 +57,15 @@ impl Display for AcAutomatonNode {
 }
 
 impl AcAutomaton {
-    pub fn new(words: Vec<&[u8]>) -> Self {
+    /// Initialization with a tuple having the word to be searched for, and optionally the replacement
+    pub fn new(words: Vec<(Vec<u8>, Option<Vec<u8>>)>) -> Self {
         let root = AcAutomatonNode {
             depth: 0,
             children: HashMap::new(),
             suffix_link: Weak::new(), // In the end, the only node not having suffix_link should be root
             output_link: Weak::new(),
             is_word: false,
+            replacement: None,
         };
         let root_rc = Rc::new(RefCell::new(root));
         let mut ac = AcAutomaton {
@@ -63,8 +79,8 @@ impl AcAutomaton {
         ac
     }
 
-    fn add_word(&mut self, word: &[u8]) {
-        self.root.borrow_mut().add_word(&word);
+    fn add_word(&mut self, word: (Vec<u8>, Option<Vec<u8>>)) {
+        self.root.borrow_mut().add_word((&word.0, word.1));
     }
 
     /// Breadth-first calculating suffix links for each node
@@ -94,10 +110,12 @@ impl AcAutomaton {
         self.state = AcAutomatonNode::find_next_state(Rc::clone(&self.state), char)
     }
 
+    /// Checks whether the current state is pointing at the root node
     pub fn is_state_root(&self) -> bool {
         self.state.borrow().suffix_link.upgrade().is_none()
     }
 
+    /// Checks whether the node that the state is pointing at is a dictionary word
     pub fn is_state_word(&self) -> bool {
         self.state.borrow().is_word
     }
@@ -107,15 +125,23 @@ impl AcAutomaton {
         self.state = Rc::clone(&self.root)
     }
 
+    /// Gives the current tree depth of the node pointed at by the state
     pub fn state_depth(&self) -> usize {
         self.state.borrow().depth
+    }
+
+    /// Access the node pointed by the state directly, allowing access to exposed public attributes of AcAutomatonNode
+    pub fn state_replacement(&self) -> Option<Rc<Vec<u8>>> {
+        self.state.borrow().replacement.as_ref().map(|value| Rc::clone(value))
     }
 }
 
 impl AcAutomatonNode {
-    fn add_word(&mut self, word: &[u8]) {
+    fn add_word(&mut self, word: (&[u8], Option<Vec<u8>>)) {
+        let (word, replacement) = word;
         if word.len() == 0 {
             self.is_word = true;
+            self.replacement = replacement.map(|val| Rc::new(val));
             return;
         }
         let (first, remaining_word) = word.split_first().unwrap(); // word is not empty
@@ -125,8 +151,9 @@ impl AcAutomatonNode {
             is_word: false,
             output_link: Weak::new(),
             suffix_link: Weak::new(),
+            replacement: None,
         })));
-        child.borrow_mut().add_word(remaining_word);
+        child.borrow_mut().add_word((remaining_word, replacement));
     }
 
     /// Calculates the suffix and output links for all children of the given node. Assumes that all N-1 nodes' suffix links are already determined

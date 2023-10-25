@@ -27,25 +27,43 @@ impl<R: AsyncRead> AhoCorasickAsyncReader<R> {
     }
 }
 
+impl<R: AsyncRead> AhoCorasickAsyncReader<R> {
+    // Helper uniformizing method : writing to buffer with index. Does not check index boundary and may panic
+    #[inline(always)]
+    fn write_to_buffer(buf: &mut [u8], idx: &mut usize, char: u8) {
+        buf[*idx] = char;
+        *idx += 1;
+    }
+    // Helper uniformizing method : writes to the buffer at index, or pushes the char to the deque in case of buffer overflow
+    #[inline(always)]
+    fn write_to_buffer_overflow_deque(buf: &mut [u8], deque: &mut VecDeque<u8>, idx: &mut usize, char: u8) {
+        if *idx < buf.len() {
+            buf[*idx] = char;
+            *idx += 1;
+        } else {
+            deque.push_back(char);
+        }
+    }
+}
+
 impl<R> AsyncRead for AhoCorasickAsyncReader<R>
 where
     R: AsyncRead
 {
     fn poll_read(
-        self: std::pin::Pin<&mut Self>,
+        mut self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
         buf: &mut [u8],
     ) -> std::task::Poll<std::io::Result<usize>> {
-        let this = self.project();
+        let this = self.as_mut().project();
         if this.buffer.len() < buf.len() {
-            this.buffer.resize(buf.len(), b'0');
+            this.buffer.resize(buf.len(), b'\0');
         }
         let mut write_idx: usize = 0;
         while this.pending_write_buffer.len() > 0 {
             // First, write pending buffer if any
             if write_idx < buf.len() {
-                buf[write_idx] = this.pending_write_buffer.pop_front().unwrap();
-                write_idx += 1;
+                Self::write_to_buffer(buf, &mut write_idx, this.pending_write_buffer.pop_front().unwrap());
             } else {
                 break;
             }
@@ -61,12 +79,7 @@ where
                         if size == 0 {
                             // End reached - discard potential buffer
                             while this.potential_buffer.len() > 0 {
-                                if write_idx < buf.len() {
-                                    buf[write_idx] = this.potential_buffer.pop_front().unwrap();
-                                    write_idx += 1;
-                                } else {
-                                    this.pending_write_buffer.push_back(this.potential_buffer.pop_front().unwrap());
-                                }
+                                Self::write_to_buffer_overflow_deque(buf, this.pending_write_buffer, &mut write_idx, this.potential_buffer.pop_front().unwrap());
                             }
                         }
                         for byte in &this.buffer[..size] {
@@ -76,19 +89,9 @@ where
                                 // No potential replacements
                                 while this.potential_buffer.len() > 0 {
                                     // At this point potential buffer is discareded (written)
-                                    if write_idx < buf.len() {
-                                        buf[write_idx] = this.potential_buffer.pop_front().unwrap();
-                                        write_idx += 1;
-                                    } else {
-                                        this.pending_write_buffer.push_back(this.potential_buffer.pop_front().unwrap());
-                                    }
+                                    Self::write_to_buffer_overflow_deque(buf, this.pending_write_buffer, &mut write_idx, this.potential_buffer.pop_front().unwrap());
                                 }
-                                if write_idx < buf.len() {
-                                    buf[write_idx] = *byte;
-                                    write_idx += 1;
-                                } else {
-                                    this.pending_write_buffer.push_back(*byte);
-                                }
+                                Self::write_to_buffer_overflow_deque(buf, this.pending_write_buffer, &mut write_idx, *byte);
                             } else {
                                 this.potential_buffer.push_back(*byte);
                                 // Either we followed a potential word, or we jumped to a different branch following the suffix link
@@ -96,29 +99,25 @@ where
                                 // keeping as new potential the last part containing the amount of bytes equal to the new state node depth
                                 while this.potential_buffer.len() > current_state_depth {
                                     // If current potential word's depth is inferior to the potential buffer, we know that buffer prefix can be discarded
-                                    if write_idx < buf.len() {
-                                        buf[write_idx] = this.potential_buffer.pop_front().unwrap();
-                                        write_idx += 1;
-                                    } else {
-                                        this.pending_write_buffer.push_back(this.potential_buffer.pop_front().unwrap());
-                                    }
+                                    Self::write_to_buffer_overflow_deque(buf, this.pending_write_buffer, &mut write_idx, this.potential_buffer.pop_front().unwrap());
                                 }
                                 if this.ac.automaton.is_state_word() {
                                     // Minimal size word detected => replacement. Currently, the only mode is "first found first replaced", even in case a larger overlapping replacement would've been possible
-                                    let from_word: Vec<u8> = this.potential_buffer.drain(..).collect();
-                                    if let Some(pos) = this.ac.replace_from.iter().position(|word| &from_word == word) {
-                                        // Unless logic error, this should be guaranteed by the nature of AC
-                                        let replacement = this.ac.replace_to.get(pos).unwrap(); // Because they were unzipped from tuples, both vec size will always match
-                                        for replaced_byte in replacement.into_iter() {
-                                            if write_idx < buf.len() {
-                                                buf[write_idx] = *replaced_byte;
-                                                write_idx += 1;
-                                            } else {
-                                                this.pending_write_buffer.push_back(*replaced_byte);
-                                            }
+                                    if let Some(replacement) = this.ac.automaton.state_replacement() {
+                                        // Replacement is given by the automaton node, so we only need to clear the potential buffer
+                                        this.potential_buffer.clear();
+                                        for replaced_byte in replacement.iter() {
+                                            Self::write_to_buffer_overflow_deque(buf, this.pending_write_buffer, &mut write_idx, *replaced_byte);
                                         }
-                                        this.ac.automaton.reset_state();
+                                    } else {
+                                        // We have reached a word, but it has no replacement - with the current constructor this case is not possible
+                                        // However maybe in the future a search without replace feature might be added, and here's where it can be handled
+                                        // In the meanwhile, we will simply discard the buffer. The state will be reset in all cases, as if the word had been found
+                                        while this.potential_buffer.len() > 0 {
+                                            Self::write_to_buffer_overflow_deque(buf, this.pending_write_buffer, &mut write_idx, this.potential_buffer.pop_front().unwrap());
+                                        }
                                     }
+                                    this.ac.automaton.reset_state();
                                 }
                             }
                         }
@@ -129,7 +128,7 @@ where
                             // Nothing written, but potential buffer is not empty - request immediate poll again with new buffer
                             // This case happens when the potential buffer (replacement word length) exceeds the current chunk size while matching the entire chunk :
                             // nothing can be written yet, but next chunk(s) are needed to determine the outcome (discard as-is, or replace)
-                            cx.waker().clone().wake();
+                            cx.waker().wake_by_ref();
                             Poll::Pending
                         } else {
                             // Nothing left to write
