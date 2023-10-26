@@ -124,10 +124,14 @@ where
                         if write_idx > 0 {
                             // Something has been written
                             Poll::Ready(Ok(write_idx))
-                        } else if this.potential_buffer.len() > 0 {
-                            // Nothing written, but potential buffer is not empty - request immediate poll again with new buffer
-                            // This case happens when the potential buffer (replacement word length) exceeds the current chunk size while matching the entire chunk :
-                            // nothing can be written yet, but next chunk(s) are needed to determine the outcome (discard as-is, or replace)
+                        } else if size > 0 {
+                            // Special cases handling : a non-empty chunk has been read from the source, however nothing has been written
+                            // Identified cases where this might happen :
+                            // 1. When the pattern exceeds the chunk size, and is fully buffered in potential_buffer waiting to be replaced or discarded
+                            // 2. When the chunk fully matches a pattern, and the replacement is an empty string (very specific)
+                            //
+                            // We cannot respond with Ok(0), which would mean end of read, so we simply request a new poll immediately,
+                            // and proceed reading more chunks from the source
                             cx.waker().wake_by_ref();
                             Poll::Pending
                         } else {
