@@ -1,5 +1,12 @@
 Simple and safe implementation of AhoCorasick automaton in Async context
 
+### DEPRECATED
+
+> [!WARNING]
+> This crate has been deprecated
+
+Async code has been ported to a [fork of aho-corasick crate](https://github.com/artem-tim/aho-corasick), which uses optimized automatons of the main crate. Please use that one for your async replacement needs.
+
 ## Motivation
 
 In non async context, look no further than the popular [aho-corasick](https://github.com/BurntSushi/aho-corasick) crate.
